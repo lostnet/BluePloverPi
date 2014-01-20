@@ -7,8 +7,9 @@ import bluetooth
 from bluetooth import *
 import dbus
 import time
-import evdev
+# import evdev
 from evdev import *
+from Xlib import X, display
 import keymap
 
 class Bluetooth:
@@ -92,7 +93,14 @@ class Keyboard():
       try:
         # Try and get a keyboard - should always be event0 as we.re only
         # plugging one thing in
-        self.dev = InputDevice("/dev/input/event0")
+        # self.dev = InputDevice("/dev/input/event0")
+	# http://rosettacode.org/wiki/Window_creation/X11#Xlib_2
+	self.display = display.Display()
+	self.screen = self.display.screen()
+	self.window = self.screen.root.create_window(10,10,100,100,1, self.screen.root_depth, event_mask=X.KeyPressMask|X.KeyReleaseMask)
+	self.gc = self.window.create_gc()
+	self.window.map()
+	# self.dev = 
         have_dev = True
       except OSError:
         print "Keyboard not found, waiting 3 seconds and retrying"
@@ -100,7 +108,8 @@ class Keyboard():
       print "Found a keyboard"
 
   def change_state(self, event):
-    evdev_code = ecodes.KEY[event.code]
+    # linux and X codes differ by X's reserved 8?
+    evdev_code = ecodes.KEY[event.detail-8]
     modkey_element = keymap.modkey(evdev_code)
     if modkey_element > 0:
       # Need to set one of the modifier bits
@@ -113,19 +122,22 @@ class Keyboard():
       hex_key = keymap.convert(evdev_code)
       # Loop through elements 4 to 9 of the input report structure
       for i in range (4, 10):
-        if self.state[i] == hex_key and event.value == 0:
+        if self.state[i] == hex_key and event.type == X.KeyRelease:
           # Code is 0 so we need to depress it
           self.state[i] = 0x00
           break
-        elif self.state[i] == 0x00 and event.value == 1:
+        elif self.state[i] == 0x00 and event.type == X.KeyPress:
           # If the current space is empty and the key is being pressed
           self.state[i] = hex_key
           break
 
   def event_loop(self, bt):
-    for event in self.dev.read_loop():
+    while True:
+      event = self.display.next_event()
       # Only bother if we hit a key and it's an up or down event
-      if event.type == ecodes.EV_KEY and event.value < 2:
+      if event.type == X.KeyPress or event.type == X.KeyRelease:
+
+        print "key press" + str(event)
         self.change_state(event)
         bt.send_input(self.state)
 
